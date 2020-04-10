@@ -39,7 +39,7 @@ class SoftMask(nn.Module):
         out = x[..., None] * (v / (eps + torch.sum(v, dim=-1, keepdim=True).to(x.dtype)))[..., None, :]
         out = out.reshape(nb_frames, nb_samples, nb_bins, nb_channels, 2, nb_sources)
         out = out.permute(5, 0, 1, 3, 2, 4)
-        #returns souce, frames, batch, channels, bins, 2(complex)
+        #outputs: souce, frames, batch, channels, bins, 2(complex)
         return out
 
 
