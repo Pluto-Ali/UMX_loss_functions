@@ -39,7 +39,6 @@ def _augment_channelswap(audio):
 
 def load_datasets(parser, args):
     """Loads the specified dataset from commandline arguments
-
     Returns:
         train_dataset, validation_dataset
     """
@@ -196,7 +195,11 @@ def load_datasets(parser, args):
 
     elif args.dataset == 'musdb':
         parser.add_argument('--is-wav', action='store_true', default=False,
-                            help='loads wav instead of STEMS')
+                            help='flags wav version of the dataset')
+        parser.add_argument(
+            '--targets', type=str, nargs='+',
+            default=['vocals', 'drums', 'bass', 'other']
+        )
         parser.add_argument('--samples-per-track', type=int, default=64)
         parser.add_argument(
             '--source-augmentations', type=str, nargs='+',
@@ -208,7 +211,7 @@ def load_datasets(parser, args):
             'root': args.root,
             'is_wav': args.is_wav,
             'subsets': 'train',
-            'target': args.target,
+            'targets': args.targets,
             'download': args.root is None,
             'seed': args.seed
         }
@@ -252,18 +255,14 @@ class AlignedDataset(torch.utils.data.Dataset):
         all datasets provided here, due to the least amount of
         preprocessing, it is also the fastest option, however,
         it lacks any kind of source augmentations or custum mixing.
-
         Typical use cases:
-
         * Source Separation (Mixture -> Target)
         * Denoising (Noisy -> Clean)
         * Bandwidth Extension (Low Bandwidth -> High Bandwidth)
-
         Example
         =======
         data/train/01/mixture.wav --> input
         data/train/01/vocals.wav ---> output
-
         """
         self.root = Path(root).expanduser()
         self.split = split
@@ -337,15 +336,12 @@ class SourceFolderDataset(torch.utils.data.Dataset):
         such das DCASE. For each source a variable number of
         tracks/sounds is available, therefore the dataset
         is unaligned by design.
-
         Example
         =======
         train/vocals/track11.wav -----------------\
         train/drums/track202.wav  (interferer1) ---+--> input
         train/bass/track007a.wav  (interferer2) --/
-
         train/vocals/track11.wav ---------------------> output
-
         """
         self.root = Path(root).expanduser()
         self.split = split
@@ -430,7 +426,6 @@ class FixedSourcesTrackFolderDataset(torch.utils.data.Dataset):
         and a list of interferences files (`interferer_files`).
         A linear mix is performed on the fly by summing the target and
         the inferers up.
-
         Due to the fact that all tracks comprise the exact same set
         of sources, the random track mixing augmentation technique
         can be used, where sources from different tracks are mixed
@@ -439,19 +434,15 @@ class FixedSourcesTrackFolderDataset(torch.utils.data.Dataset):
         When random track mixing is enabled, we define an epoch as
         when the the target source from all tracks has been seen and only once
         with whatever interfering sources has randomly been drawn.
-
         This dataset is recommended to be used for small/medium size
         for example like the MUSDB18 or other custom source separation
         datasets.
-
         Example
         =======
         train/1/vocals.wav ---------------\
         train/1/drums.wav (interferer1) ---+--> input
         train/1/bass.wav -(interferer2) --/
-
         train/1/vocals.wav -------------------> output
-
         """
         self.root = Path(root).expanduser()
         self.split = split
@@ -553,15 +544,12 @@ class VariableSourcesTrackFolderDataset(torch.utils.data.Dataset):
         and the extension of sources to used for mixing.
         A linear mix is performed on the fly by summing all sources in a
         track folder.
-
         Since the number of sources differ per track,
         while target is fixed, a random track mix
         augmentation cannot be used. Instead, a random track
         can be used to load the interfering sources.
-
         Also make sure, that you do not provide the mixture
         file among the sources!
-
         Example
         =======
         train/1/vocals.wav --> input target   \
@@ -569,9 +557,7 @@ class VariableSourcesTrackFolderDataset(torch.utils.data.Dataset):
         train/1/bass.wav --> input target    --+--> input
         train/1/accordion.wav --> input target |
         train/1/marimba.wav --> input target  /
-
         train/1/vocals.wav -----------------------> output
-
         """
         self.root = Path(root).expanduser()
         self.split = split
@@ -679,7 +665,7 @@ class VariableSourcesTrackFolderDataset(torch.utils.data.Dataset):
 class MUSDBDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        target='vocals',
+        targets=['vocals', 'drums', 'bass', 'other'],
         root=None,
         download=False,
         is_wav=False,
@@ -695,11 +681,10 @@ class MUSDBDataset(torch.utils.data.Dataset):
     ):
         """MUSDB18 torch.data.Dataset that samples from the MUSDB tracks
         using track and excerpts with replacement.
-
         Parameters
         ----------
-        target : str
-            target name of the source to be separated, defaults to ``vocals``.
+        targets : str
+            list of target names of the source to be separated``.
         root : str
             root path of MUSDB
         download : boolean
@@ -731,12 +716,11 @@ class MUSDBDataset(torch.utils.data.Dataset):
         args, kwargs : additional keyword arguments
             used to add further control for the musdb dataset
             initialization function.
-
         """
         random.seed(seed)
         self.is_wav = is_wav
         self.seq_duration = seq_duration
-        self.target = target
+        self.targets = targets
         self.subsets = subsets
         self.split = split
         self.samples_per_track = samples_per_track
@@ -755,18 +739,11 @@ class MUSDBDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         audio_sources = []
-        target_ind = None
-
         # select track
         track = self.mus.tracks[index // self.samples_per_track]
-
         # at training time we assemble a custom mix
-        if self.split == 'train' and self.seq_duration:
-            for k, source in enumerate(self.mus.setup['sources']):
-                # memorize index of target source
-                if source == self.target:
-                    target_ind = k
-
+        if self.split == 'train':
+            for k, source in enumerate(self.targets):
                 # select a random track
                 if self.random_track_mix:
                     track = random.choice(self.mus.tracks)
@@ -790,26 +767,19 @@ class MUSDBDataset(torch.utils.data.Dataset):
             # # apply linear mix over source index=0
             x = stems.sum(0)
             # get the target stem
-            if target_ind is not None:
-                y = stems[target_ind]
-            # assuming vocal/accompaniment scenario if target!=source
-            else:
-                vocind = list(self.mus.setup['sources'].keys()).index('vocals')
-                # apply time domain subtraction
-                y = x - stems[vocind]
+            y = [stems[ind] for ind, _ in enumerate(self.targets)]
 
-        # for validation and test, we deterministically yield the full
+        # for validation, we deterministically yield the full
         # pre-mixed musdb track
         else:
-            # get the non-linear source mix straight from musdb
+            # get the non-linear source mix straight from musdb CROPPED 6seconds for batch_size
             x = torch.tensor(
-                track.audio.T,
+                track.audio[:6*44100*16].T, #CROPPED VERSION!!! ORIGINAL IS track.audio.T
                 dtype=self.dtype
             )
-            y = torch.tensor(
-                track.targets[self.target].audio.T,
-                dtype=self.dtype
-            )
+            y = [torch.tensor(
+                    track.targets[target].audio[:6*44100*16].T, dtype=self.dtype #ORIGINAL IS track.audio.T
+                ) for target in self.targets]
 
         return x, y
 
