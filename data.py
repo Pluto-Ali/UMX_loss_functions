@@ -9,7 +9,7 @@ import tqdm
 
 
 class Compose(object):
-    """ Composes several augmentation transforms.
+    """Composes several augmentation transforms.
     Args:
         augmentations: list of augmentations to compose.
     """
@@ -774,7 +774,7 @@ class MUSDBDataset(torch.utils.data.Dataset):
         else:
             # get the non-linear source mix straight from musdb CROPPED 6seconds for batch_size
             x = torch.tensor(
-                track.audio[:6*44100*16].T,  # CROPPED VERSION!!! ORIGINAL IS track.audio.T
+                track.audio[:6*44100*16].T, #CROPPED VERSION!!! ORIGINAL IS track.audio.T
                 dtype=self.dtype
             )
             y = [torch.tensor(
