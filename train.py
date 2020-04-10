@@ -12,43 +12,141 @@ import numpy as np
 import random
 from git import Repo
 import os
-import copy
+from torch.utils.data.sampler import SubsetRandomSampler
+import torchaudio
 
 
 tqdm.monitor_interval = 0
 
+def SISDR(s, s_hat):
+    s = torch.stack(s).view(-1)
+    EPS = torch.finfo(s.dtype).eps
+    s_hat = torch.stack(s_hat).view(-1)
+    a = (torch.dot(s_hat, s) * s) / ((s ** 2).sum() + EPS)
+    b = a - s_hat
+    return -10*torch.log10(((a*a).sum()) / ((b*b).sum()+EPS))
+
+def minSDSDR(s,s_hat):
+    s = torch.stack(s).view(-1)
+    EPS = torch.finfo(s.dtype).eps
+    s_hat = torch.stack(s_hat).view(-1)
+    snr = 10*torch.log10((s**2).sum() / ((s-s_hat)**2).sum() + EPS)
+    sdsdr = snr + 20*torch.log10(torch.dot(s_hat,s)/(s**2).sum() + EPS)
+    return -torch.min(snr, sdsdr)
 
 def train(args, unmix, device, train_sampler, optimizer):
     losses = utils.AverageMeter()
+    if args.loss in ['L2time', 'L2mask', 'L2freq']:
+        criteria = [torch.nn.MSELoss() for t in args.targets]
+    if args.loss in ['L1time', 'L1mask', 'L1freq']:
+        criteria = [torch.nn.L1Loss() for t in args.targets]
     unmix.train()
+    print('Chosen loss: ')
+    print(args.loss)
     pbar = tqdm.tqdm(train_sampler, disable=args.quiet)
     for x, y in pbar:
         pbar.set_description("Training batch")
-        x, y = x.to(device), y.to(device)
+        x = x.to(device)
+        y = [i.to(device) for i in y]
         optimizer.zero_grad()
-        Y_hat = unmix(x)
-        Y = unmix.transform(y)
-        loss = torch.nn.functional.mse_loss(Y_hat, Y)
+        Y_hats = unmix(x) #outputs list of masks: frames, batch, channels, bins; len=sources
+        X = unmix.stft(x).permute(3,0,1,2,4)
+        mag = (torchaudio.functional.complex_norm(X))
+        loss = 0
+        # IF FREQUENCY MASKING:
+        if args.loss in ['L1mask', 'L2mask']:
+            Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
+            energy = torch.sum(torch.stack(Ys), dim=0)
+            Y = [Y / (energy + 1e-18) for Y in Ys]
+            for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
+                loss = loss + criterion(Y_hat, target)
+        # IF MAPPING
+        else:  # Apply the masks
+            Y_hats = [Y_hat * mag for Y_hat in Y_hats] #obtaining magnitude estimates
+            # IF TIME DOMAIN
+            if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr']:
+                phase = torchaudio.functional.angle(X)
+                specs = [torch.stack([magnitude * torch.cos(phase),
+                                      magnitude * torch.sin(phase)],
+                                     dim=len(magnitude.shape)) for magnitude in Y_hats]
+                # here we need list_sources, frames batch channels, bins, 2(complex)
+                y_hats = [unmix.istft(spec, x.shape[-1]) for spec in specs]
+                if args.loss == 'SISDRtime':
+                    loss = SISDR(y, y_hats)
+                elif args.loss == 'MinSNRsdsdr':
+                    loss = minSDSDR(y, y_hats)
+                else:
+                    for Y_hat, target, criterion in zip(y_hats, y, criteria):
+                        loss = loss + criterion(Y_hat, target)
+            # IF FREQUENCY MAPPING:
+            else:
+                Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
+                if args.loss == 'SISDRfreq':
+                    loss = SISDR(Y, Y_hats)
+                else:
+                    for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
+                        loss = loss + criterion(Y_hat, target)
+
         loss.backward()
         optimizer.step()
-        losses.update(loss.item(), Y.size(1))
+        losses.update(loss.item())#, Y_hat.size(1))
     return losses.avg
 
 
 def valid(args, unmix, device, valid_sampler):
     losses = utils.AverageMeter()
+    if args.loss in ['L2time', 'L2mask', 'L2freq']:
+        criteria = [torch.nn.MSELoss() for t in args.targets]
+    if args.loss in ['L1time', 'L1mask', 'L1freq']:
+        criteria = [torch.nn.L1Loss() for t in args.targets]
     unmix.eval()
     with torch.no_grad():
         for x, y in valid_sampler:
-            x, y = x.to(device), y.to(device)
-            Y_hat = unmix(x)
-            Y = unmix.transform(y)
-            loss = torch.nn.functional.mse_loss(Y_hat, Y)
-            losses.update(loss.item(), Y.size(1))
+            x = x.to(device)
+            y = [i.to(device) for i in y]
+            Y_hats = unmix(x)  # outputs list of masks: frames, batch, channels, bins; len=sources
+            X = unmix.stft(x).permute(3, 0, 1, 2, 4)
+            mag = torchaudio.functional.complex_norm(X)
+            loss = 0
+            #IF FREQUENCY MASKING:
+            if args.loss in ['L1mask', 'L2mask']:
+                Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
+                energy = torch.sum(torch.stack(Ys), dim=0)
+                Y = [Y / (energy + 1e-18) for Y in Ys]
+                for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
+                    loss = loss + criterion(Y_hat, target)
+            #IF NOT MASKING
+            else: #Apply the masks
+                Y_hats = [Y_hat * mag for Y_hat in Y_hats]
+                #if time domain:
+                if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr']:
+                    phase = torchaudio.functional.angle(X)
+                    specs = [torch.stack([magnitude * torch.cos(phase),
+                                          magnitude * torch.sin(phase)],
+                                         dim=len(magnitude.shape)) for magnitude in Y_hats]
+                    y_hats = [unmix.istft(spec, x.shape[-1]) for spec in specs]
+                    if args.loss == 'SISDRtime':
+                        loss = SISDR(y, y_hats)
+                    elif args.loss == 'MinSNRsdsdr':
+                        loss = minSDSDR(y, y_hats)
+                    else:
+                        for Y_hat, target, criterion in zip(y_hats, y, criteria):
+                            loss = loss + criterion(Y_hat, target)
+                #if frequency domain mapping
+                else:
+                    Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
+                    if args.loss == 'SISDRfreq':
+                        loss = SISDR(Y, Y_hats)
+                    else:
+                        for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
+                            loss = loss + criterion(Y_hat, target)
+            losses.update(loss.item())#, Y_hat.size(1))
+
         return losses.avg
 
 
-def get_statistics(args, dataset):
+def get_statistics(args, dataloader):
+    '''
     scaler = sklearn.preprocessing.StandardScaler()
 
     spec = torch.nn.Sequential(
@@ -56,34 +154,34 @@ def get_statistics(args, dataset):
         model.Spectrogram(mono=True)
     )
 
-    dataset_scaler = copy.deepcopy(dataset)
-    dataset_scaler.samples_per_track = 1
-    dataset_scaler.augmentations = None
-    dataset_scaler.random_chunks = False
-    dataset_scaler.random_track_mix = False
-    dataset_scaler.random_interferer_mix = False
-    dataset_scaler.seq_duration = None
-    pbar = tqdm.tqdm(range(len(dataset_scaler)), disable=args.quiet)
-    for ind in pbar:
-        x, y = dataset_scaler[ind]
+    pbar = tqdm.tqdm(dataloader, disable=args.quiet)
+    for x, y in pbar:
         pbar.set_description("Compute dataset statistics")
-        X = spec(x[None, ...])
+        X = spec(x)
         scaler.partial_fit(np.squeeze(X))
 
-    # set inital input scaler values
     std = np.maximum(
         scaler.scale_,
         1e-4*np.max(scaler.scale_)
     )
-    return scaler.mean_, std
+    np.save('scalermean.npy',scaler.mean_)
+    np.save('std.npy', std)
 
+
+    return scaler.mean_, std
+    '''
+    return np.load('scalermean.npy'), np.load('std.npy')
 
 def main():
     parser = argparse.ArgumentParser(description='Open Unmix Trainer')
-
-    # which target do we want to train?
-    parser.add_argument('--target', type=str, default='vocals',
-                        help='target source (will be passed to the dataset)')
+    # Loss parameters
+    parser.add_argument('--loss', type=str, default="L2freq",
+                        choices=[
+                            'L2freq', 'L1freq', 'L2time', 'L1time',
+                            'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
+                            'MinSNRsdsdr'
+                        ],
+                        help='kind of loss used during training')
 
     # Dataset paramaters
     parser.add_argument('--dataset', type=str, default="musdb",
@@ -92,6 +190,7 @@ def main():
                             'trackfolder_var', 'trackfolder_fix'
                         ],
                         help='Name of the dataset.')
+
     parser.add_argument('--root', type=str, help='root path of dataset')
     parser.add_argument('--output', type=str, default="open-unmix",
                         help='provide output path base folder name')
@@ -99,6 +198,13 @@ def main():
 
     # Trainig Parameters
     parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument(
+        '--reduce-samples',
+        type=int,
+        default=1,
+        help="reduce training samples by factor n"
+    )
+
     parser.add_argument('--batch-size', type=int, default=16)
     parser.add_argument('--lr', type=float, default=0.001,
                         help='learning rate, defaults to 1e-3')
@@ -154,17 +260,35 @@ def main():
     random.seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
-
     train_dataset, valid_dataset, args = data.load_datasets(parser, args)
 
+    num_train = len(train_dataset)
+    indices = list(range(num_train))
+
+    # shuffle train indices once and for all
+    np.random.seed(args.seed)
+    np.random.shuffle(indices)
+
+    if args.reduce_samples > 1:
+        split = int(np.floor(num_train / args.reduce_samples))
+        train_idx = indices[:split]
+    else:
+        train_idx = indices
+    sampler = SubsetRandomSampler(train_idx)
     # create output dir if not exist
     target_path = Path(args.output)
     target_path.mkdir(parents=True, exist_ok=True)
 
     train_sampler = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True,
-        **dataloader_kwargs
+        train_dataset, batch_size=args.batch_size,
+        sampler=sampler, **dataloader_kwargs
     )
+
+    stats_sampler = torch.utils.data.DataLoader(
+        train_dataset, batch_size=1,
+        sampler=sampler, **dataloader_kwargs
+    )
+
     valid_sampler = torch.utils.data.DataLoader(
         valid_dataset, batch_size=1,
         **dataloader_kwargs
@@ -174,23 +298,27 @@ def main():
         scaler_mean = None
         scaler_std = None
     else:
-        scaler_mean, scaler_std = get_statistics(args, train_dataset)
+        scaler_mean, scaler_std = get_statistics(args, stats_sampler)
 
     max_bin = utils.bandwidth_to_max_bin(
         train_dataset.sample_rate, args.nfft, args.bandwidth
     )
-
-    unmix = model.OpenUnmix(
+    unmix = model.OpenUnmixSingle(
+        n_fft=4096,
+        n_hop=1024,
+        input_is_spectrogram=False,
+        hidden_size=args.hidden_size,
+        nb_channels=args.nb_channels,
+        sample_rate=train_dataset.sample_rate,
+        nb_layers=3,
         input_mean=scaler_mean,
         input_scale=scaler_std,
-        nb_channels=args.nb_channels,
-        hidden_size=args.hidden_size,
-        n_fft=args.nfft,
-        n_hop=args.nhop,
         max_bin=max_bin,
-        sample_rate=train_dataset.sample_rate
+        unidirectional=args.unidirectional,
+        power=1,
     ).to(device)
-
+    print('learning rate:')
+    print(args.lr)
     optimizer = torch.optim.Adam(
         unmix.parameters(),
         lr=args.lr,
@@ -208,11 +336,12 @@ def main():
 
     # if a model is specified: resume training
     if args.model:
+        print('LOADING MODEL')
         model_path = Path(args.model).expanduser()
-        with open(Path(model_path, args.target + '.json'), 'r') as stream:
+        with open(Path(model_path, str(len(args.targets)) + '.json'), 'r') as stream:
             results = json.load(stream)
 
-        target_model_path = Path(model_path, args.target + ".chkpnt")
+        target_model_path = Path(model_path, "model.chkpnt")
         checkpoint = torch.load(target_model_path, map_location=device)
         unmix.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -229,6 +358,7 @@ def main():
         best_epoch = results['best_epoch']
         es.best = results['best_loss']
         es.num_bad_epochs = results['num_bad_epochs']
+        print('Model loaded')
     # else start from 0
     else:
         t = tqdm.trange(1, args.epochs + 1, disable=args.quiet)
@@ -264,7 +394,6 @@ def main():
             },
             is_best=valid_loss == es.best,
             path=target_path,
-            target=args.target
         )
 
         # save params
@@ -280,7 +409,7 @@ def main():
             'commit': commit
         }
 
-        with open(Path(target_path,  args.target + '.json'), 'w') as outfile:
+        with open(Path(target_path,  str(len(args.targets)) + '.json'), 'w') as outfile:
             outfile.write(json.dumps(params, indent=4, sort_keys=True))
 
         train_times.append(time.time() - end)
