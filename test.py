@@ -1,21 +1,17 @@
-import torch
-import numpy as np
 import argparse
-import soundfile as sf
-import norbert
 import json
+import warnings
 from pathlib import Path
-import scipy.signal
+
+import norbert
+import numpy as np
 import resampy
+import soundfile as sf
+import torch
+import torchaudio
+
 import model
 import utils
-import warnings
-import torchaudio
-import tqdm
-from contextlib import redirect_stderr
-import io
-
-
 
 
 def load_model(targets, model_name='umxhq', device='cpu'):
@@ -57,17 +53,7 @@ def load_model(targets, model_name='umxhq', device='cpu'):
         unmix.eval()
         unmix.to(device)
         return unmix
-'''
-def istft(X, rate=44100, n_fft=4096, n_hopsize=1024):
-    t, audio = scipy.signal.istft(
-        X / (n_fft / 2),
-        rate,
-        nperseg=n_fft,
-        noverlap=n_fft - n_hopsize,
-        boundary=True
-    )
-    return audio
-'''
+
 def separate(
     audio,
     targets,
@@ -120,38 +106,33 @@ def separate(
     # convert numpy audio to torch
     audio_torch = torch.tensor(audio.T[None, ...]).float().to(device)
     source_names = targets
-
     unmix = load_model(
         targets=targets,
         model_name=model_name,
         device=device
     )
-
+    # Obtain the mask from the model
     V = unmix(audio_torch)
     X = unmix.stft(audio_torch).permute(3, 0, 1, 2, 4)
-    #Apply the mask
+    # Apply the mask
     mag = torchaudio.functional.complex_norm(X)
     V = [Y_hat * mag for Y_hat in V]
-    #From torch to numpy complex for norbert
+    # From torch to numpy complex, for norbert EM algorithm
     V = np.array([m.cpu().detach().numpy() for m in V])[:, :, 0, :, :]
     V = V.transpose(1,3,2,0)
     X = X.detach().cpu().numpy()[:,0,:,:]
     X = X[..., 0] + X[..., 1] * 1j
     X = X.transpose(0,2,1)
 
-    if residual_model or len(targets) == 1:
-        V = norbert.residual_model(V, X, alpha if softmask else 1)
-        source_names += (['residual'] if len(targets) > 1
-                         else ['accompaniment'])
-    #Apply norbert
+    # Apply norbert Wiener Filter
     Y_EM = norbert.wiener(V, X.astype(np.complex128), niter,
                        use_softmask=softmask)
 
-    #back to torch complex for torchaudio ISTFT:
+    # back to torch complex for torchaudio ISTFT:
     Y_hats = torch.stack([torch.from_numpy(np.real(Y_EM)), torch.from_numpy(np.imag(Y_EM))]).permute(1,4,3,2,0)
     Y_hats = Y_hats.float().unsqueeze(2).unbind(1)
     y_hats = [unmix.istft(spec, audio_torch.shape[-1]) for spec in Y_hats]
-    #back to numpy for BSSeval
+    # back to numpy for BSSeval
     y_hats = [y_hat.cpu().detach().numpy() for y_hat in y_hats]
 
     estimates = {}
@@ -159,7 +140,9 @@ def separate(
         estimates[name] = y_hats[j][0].T #final estimate should be [length,2] and float64
     return estimates
 
+
 def inference_args(parser, remaining_args):
+    # noinspection PyTypeChecker
     inf_parser = argparse.ArgumentParser(
         description=__doc__,
         parents=[parser],

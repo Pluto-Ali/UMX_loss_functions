@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 
+
 class NoOp(nn.Module):
     def __init__(self):
         super().__init__()
@@ -11,17 +12,19 @@ class NoOp(nn.Module):
     def forward(self, x):
         return x
 
+
 class ISTFT(nn.Module):
     def __init__(
-        self,
-        n_fft=4096,
-        n_hop=1024,
-        center=False
+            self,
+            n_fft=4096,
+            n_hop=1024,
+            center=False
     ):
         super(ISTFT, self).__init__()
         self.n_fft = n_fft
         self.n_hop = n_hop
         self.center = center
+
     def forward(self, Estimates, mixaudiolen):
         """
         Parameters:
@@ -32,22 +35,24 @@ class ISTFT(nn.Module):
         nb_frames, nb_samples, nb_channels, nb_bins, _ = Estimates.size()
         device = Estimates.device
         Estimates = Estimates.permute(1, 2, 3, 0, 4)  # undo reshape
-        Estimates = Estimates.reshape(nb_samples * nb_channels, self.n_fft // 2 + 1, -1, 2)  # merge batch and channels in multichannel stft
+        Estimates = Estimates.reshape(nb_samples * nb_channels, self.n_fft // 2 + 1, -1,
+                                      2)  # merge batch and channels in multichannel stft
         y = torchaudio.functional.istft(Estimates, n_fft=self.n_fft,
                                         window=torch.hann_window(window_length=self.n_fft).to(device),
                                         pad_mode='reflect', center=True, onesided=True, length=mixaudiolen)
         y = y.contiguous().view(nb_samples, nb_channels, -1)
         return y
 
+
 class STFT(nn.Module):
     def __init__(
-        self,
-        n_fft=4096,
-        n_hop=1024,
-        center=False
+            self,
+            n_fft=4096,
+            n_hop=1024,
+            center=False
     ):
         super(STFT, self).__init__()
-        #make it compatible with old models
+        # make it compatible with old models
         self.window = nn.Parameter(
             torch.hann_window(n_fft),
             requires_grad=False
@@ -65,7 +70,7 @@ class STFT(nn.Module):
         nb_samples, nb_channels, nb_timesteps = x.size()
         device = x.device
         # merge nb_samples and nb_channels for multichannel stft
-        x = x.reshape(nb_samples*nb_channels, -1)
+        x = x.reshape(nb_samples * nb_channels, -1)
 
         # compute stft with parameters as close as possible scipy settings
         stft_f = torch.stft(
@@ -86,19 +91,19 @@ class STFT(nn.Module):
 
 class OpenUnmixSingle(nn.Module):
     def __init__(
-        self,
-        n_fft=4096,
-        n_hop=1024,
-        input_is_spectrogram=False,
-        hidden_size=1024,
-        nb_channels=2,
-        sample_rate=44100,
-        nb_layers=3,
-        input_mean=None,
-        input_scale=None,
-        max_bin=None,
-        unidirectional=False,
-        power=1,
+            self,
+            n_fft=4096,
+            n_hop=1024,
+            input_is_spectrogram=False,
+            hidden_size=1024,
+            nb_channels=2,
+            sample_rate=44100,
+            nb_layers=3,
+            input_mean=None,
+            input_scale=None,
+            max_bin=None,
+            unidirectional=False,
+            power=1,
     ):
         """
         Input: (nb_samples, nb_channels, nb_timesteps)
@@ -121,7 +126,7 @@ class OpenUnmixSingle(nn.Module):
         self.register_buffer('sample_rate', torch.tensor(sample_rate))
 
         self.fc1 = Linear(
-            self.nb_bins*nb_channels, hidden_size,
+            self.nb_bins * nb_channels, hidden_size,
             bias=False
         )
 
@@ -142,7 +147,7 @@ class OpenUnmixSingle(nn.Module):
         )
 
         self.fc2 = Linear(
-            in_features=hidden_size*2,
+            in_features=hidden_size * 2,
             out_features=hidden_size,
             bias=False
         )
@@ -151,33 +156,30 @@ class OpenUnmixSingle(nn.Module):
 
         self.fc3_1 = Linear(
             in_features=hidden_size,
-            out_features=self.nb_output_bins*nb_channels,
+            out_features=self.nb_output_bins * nb_channels,
             bias=False
         )
         self.fc3_2 = Linear(
             in_features=hidden_size,
-            out_features=self.nb_output_bins*nb_channels,
+            out_features=self.nb_output_bins * nb_channels,
             bias=False
         )
         self.fc3_3 = Linear(
             in_features=hidden_size,
-            out_features=self.nb_output_bins*nb_channels,
+            out_features=self.nb_output_bins * nb_channels,
             bias=False
         )
 
         self.fc3_4 = Linear(
             in_features=hidden_size,
-            out_features=self.nb_output_bins*nb_channels,
+            out_features=self.nb_output_bins * nb_channels,
             bias=False
         )
 
-
-
-        self.bn3_1 = BatchNorm1d(self.nb_output_bins*nb_channels)
-        self.bn3_2 = BatchNorm1d(self.nb_output_bins*nb_channels)
-        self.bn3_3 = BatchNorm1d(self.nb_output_bins*nb_channels)
-        self.bn3_4 = BatchNorm1d(self.nb_output_bins*nb_channels)
-
+        self.bn3_1 = BatchNorm1d(self.nb_output_bins * nb_channels)
+        self.bn3_2 = BatchNorm1d(self.nb_output_bins * nb_channels)
+        self.bn3_3 = BatchNorm1d(self.nb_output_bins * nb_channels)
+        self.bn3_4 = BatchNorm1d(self.nb_output_bins * nb_channels)
 
         if input_mean is not None:
             input_mean = torch.from_numpy(
@@ -188,7 +190,7 @@ class OpenUnmixSingle(nn.Module):
 
         if input_scale is not None:
             input_scale = torch.from_numpy(
-                1.0/input_scale[:self.nb_bins]
+                1.0 / input_scale[:self.nb_bins]
             ).float()
         else:
             input_scale = torch.ones(self.nb_bins)
@@ -202,7 +204,6 @@ class OpenUnmixSingle(nn.Module):
         self.output_mean = Parameter(
             torch.ones(self.nb_output_bins).float()
         )
-
 
     def forward(self, x):
         # check for waveform or spectrogram
@@ -220,7 +221,7 @@ class OpenUnmixSingle(nn.Module):
 
         # to (nb_frames*nb_samples, nb_channels*nb_bins)
         # and encode to (nb_frames*nb_samples, hidden_size)
-        x = self.fc1(x.reshape(-1, nb_channels*self.nb_bins))
+        x = self.fc1(x.reshape(-1, nb_channels * self.nb_bins))
         # normalize every instance in a batch
         x = self.bn1(x)
         x = x.reshape(nb_frames, nb_samples, self.hidden_size)
@@ -255,7 +256,6 @@ class OpenUnmixSingle(nn.Module):
         x_2 = x_2.reshape(nb_frames, nb_samples, nb_channels, self.nb_output_bins)
         x_3 = x_3.reshape(nb_frames, nb_samples, nb_channels, self.nb_output_bins)
         x_4 = x_4.reshape(nb_frames, nb_samples, nb_channels, self.nb_output_bins)
-
 
         # apply output scaling
         x_1 *= self.output_scale

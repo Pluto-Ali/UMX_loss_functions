@@ -7,7 +7,7 @@ from pathlib import Path
 import tqdm
 import json
 import utils
-import sklearn.preprocessing
+# import sklearn.preprocessing
 import numpy as np
 import random
 from git import Repo
@@ -285,7 +285,6 @@ def main():
 
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     print("Using GPU:", use_cuda)
-    print("Using Torchaudio: ", utils._torchaudio_available())
     dataloader_kwargs = {'num_workers': args.nb_workers, 'pin_memory': True} if use_cuda else {}
 
     repo_dir = os.path.abspath(os.path.dirname(__file__))
