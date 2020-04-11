@@ -160,4 +160,4 @@ if __name__ == '__main__':
     print(results)
     method = museval.MethodStore()
     method.add_evalstore(results, args.model)
-    method.save(args.model + '.pandas')
+    method.save(args.outdir + '.pandas')
