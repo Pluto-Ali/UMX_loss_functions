@@ -2,7 +2,7 @@
 
 This repository contains the PyTorch (1.2+) implementation of our branch of [Open-Unmix](https://github.com/sigsep/open-unmix-pytorch): a study on different loss functions for Music Source Separation.  For mor details on the architecture, visit the [main respository](https://github.com/sigsep/open-unmix-pytorch).
 
-__Related Projects:__ open-unmix-pytorch | [musdb](https://github.com/sigsep/sigsep-mus-db) | [museval](https://github.com/sigsep/sigsep-mus-eval) | [norbert](https://github.com/sigsep/norbert)
+__Related Projects:__ [open-unmix-pytorch](https://github.com/sigsep/open-unmix-pytorch) | [musdb](https://github.com/sigsep/sigsep-mus-db) | [museval](https://github.com/sigsep/sigsep-mus-eval) | [norbert](https://github.com/sigsep/norbert)
 
 ## Loss coverage
 Researchers have proposed several alternatives to L2 that can be found in recent literature, but usually tested in different conditions. These can be summarized in the following taxonomy:
