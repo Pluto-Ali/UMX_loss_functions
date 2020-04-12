@@ -1,4 +1,5 @@
 import argparse
+
 import musdb
 import museval
 import test
@@ -103,7 +104,6 @@ if __name__ == '__main__':
         action='store_true', default=False,
         help='flags wav version of the dataset'
     )
-
     args, _ = parser.parse_known_args()
     args = test.inference_args(parser, args)
 

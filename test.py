@@ -2,6 +2,7 @@ import argparse
 import json
 import warnings
 from pathlib import Path
+import faulthandler
 
 import norbert
 import numpy as np
@@ -40,7 +41,6 @@ def load_model(targets, model_name='umxhq', device='cpu'):
         )
 
         unmix = model.OpenUnmixSingle(
-            #targets=results['args']['targets'],
             n_fft=results['args']['nfft'],
             n_hop=results['args']['nhop'],
             nb_channels=results['args']['nb_channels'],
@@ -52,6 +52,7 @@ def load_model(targets, model_name='umxhq', device='cpu'):
         unmix.stft.center = True
         unmix.eval()
         unmix.to(device)
+        print('loadmodel function done')
         return unmix
 
 def separate(
@@ -104,15 +105,19 @@ def separate(
 
     """
     # convert numpy audio to torch
+    print('loading audio')
     audio_torch = torch.tensor(audio.T[None, ...]).float().to(device)
+    print('audio loaded')
     source_names = targets
     unmix = load_model(
         targets=targets,
         model_name=model_name,
         device=device
     )
+    print('model loaded')
     # Obtain the mask from the model
     V = unmix(audio_torch)
+    print('separation obtained')
     X = unmix.stft(audio_torch).permute(3, 0, 1, 2, 4)
     # Apply the mask
     mag = torchaudio.functional.complex_norm(X)
@@ -123,23 +128,22 @@ def separate(
     X = X.detach().cpu().numpy()[:,0,:,:]
     X = X[..., 0] + X[..., 1] * 1j
     X = X.transpose(0,2,1)
-
+    print('pre-norbert OK')
     # Apply norbert Wiener Filter
     Y_EM = norbert.wiener(V, X.astype(np.complex128), niter,
                        use_softmask=softmask)
-
+    print('norbert OK')
     # back to torch complex for torchaudio ISTFT:
     Y_hats = torch.stack([torch.from_numpy(np.real(Y_EM)), torch.from_numpy(np.imag(Y_EM))]).permute(1,4,3,2,0)
     Y_hats = Y_hats.float().unsqueeze(2).unbind(1)
     y_hats = [unmix.istft(spec, audio_torch.shape[-1]) for spec in Y_hats]
     # back to numpy for BSSeval
     y_hats = [y_hat.cpu().detach().numpy() for y_hat in y_hats]
-
+    print('numpy OK')
     estimates = {}
     for j, name in enumerate(source_names):
         estimates[name] = y_hats[j][0].T #final estimate should be [length,2] and float64
     return estimates
-
 
 def inference_args(parser, remaining_args):
     # noinspection PyTypeChecker
@@ -320,6 +324,7 @@ if __name__ == '__main__':
 
     args, _ = parser.parse_known_args()
     args = inference_args(parser, args)
+    faulthandler.enable()
 
     test_main(
         input_files=args.input, samplerate=args.samplerate,
