@@ -97,7 +97,7 @@ def train(args, unmix, device, train_sampler, optimizer):
             if args.loss == 'BCE_IBM':
                 Y = torch.stack(Y)
                 _, Y = Y.max(0)
-                Y = torch.nn.functional.one_hot(Y,4).unbind(4)
+                Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
             # Compute the L1, L2 or Binary Cross-Entropy mask loss:
             for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                 loss = loss + criterion(Y_hat, target)
@@ -166,7 +166,7 @@ def valid(args, unmix, device, valid_sampler):
                 if args.loss == 'BCE_IBM':
                     Y = torch.stack(Y)
                     _, Y = Y.max(0)
-                    Y = torch.nn.functional.one_hot(Y, 4).unbind(4)
+                    Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
                 # Compute the L1, L2 or Binary Cross-Entropy mask loss:
                 for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                     loss = loss + criterion(Y_hat, target)
