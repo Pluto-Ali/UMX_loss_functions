@@ -22,7 +22,9 @@ def SISDR(s, s_hat):
     """Computes the Scale-Invariant SDR as in [1]_.
     References
     ----------
-    .. [1] Le Roux, Jonathan, et al. "SDR–half-baked or well done?." ICASSP 2019-2019 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2019.
+    .. [1] Le Roux, Jonathan, et al. "SDR–half-baked or well done?." ICASSP 2019-2019 IEEE International Conference on
+    Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2019.
+
     Parameters:
         s: list of targets of any shape
         s_hat: list of corresponding estimates of any shape
@@ -35,10 +37,14 @@ def SISDR(s, s_hat):
     return -10*torch.log10(((a*a).sum()) / ((b*b).sum()+EPS))
 
 def minSNRsdsdr(s,s_hat):
-    """Computes the minimum between SNR and Scale-Dependant SDR as in [1]_.
+    """Computes the minimum between SNR and Scale-Dependant SDR as proposed in [1]_, obtaining a loss sensitive to both
+    upscalings and downscalings.
+
     References
     ----------
-    .. [1] Le Roux, Jonathan, et al. "SDR–half-baked or well done?." ICASSP 2019-2019 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2019.
+    .. [1] Le Roux, Jonathan, et al. "SDR–half-baked or well done?." ICASSP 2019-2019 IEEE International Conference on
+    Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2019.
+
     Parameters:
         s: list of targets of any shape
         s_hat: list of corresponding estimates of any shape
@@ -58,6 +64,8 @@ def train(args, unmix, device, train_sampler, optimizer):
         criteria = [torch.nn.MSELoss() for t in args.targets]
     if args.loss in ['L1time', 'L1mask', 'L1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
+    if args.loss in ['BCE_IRM', 'BCE_IBM']:
+        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
     # Set model mode as train.
     unmix.train()
     print('Chosen loss: ')
@@ -73,25 +81,30 @@ def train(args, unmix, device, train_sampler, optimizer):
         # Clear gradients
         optimizer.zero_grad()
         # Obtain tha estimated magnitude mask and reshape it
-        Y_hats = unmix(x) # outputs list of masks: frames, batch, channels, bins; len=sources
+        Y_hats = unmix(x)    # outputs list of masks: frames, batch, channels, bins; len=sources
         X = unmix.stft(x).permute(3,0,1,2,4)
         # Compute input or mixture magnitude from mixture spectrogram X
         mag = (torchaudio.functional.complex_norm(X))
         loss = 0
         # IF FREQUENCY MASKING LOSS:
-        if args.loss in ['L1mask', 'L2mask']:
+        if args.loss in ['L1mask', 'L2mask', 'BCE_IRM', 'BCE_IBM']:
             # Targets are built from the STFT(y)
             Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
-            # Energy normalization for convergence:
+            # Energy normalization for convergence, obtaining IRM Y:
             energy = torch.sum(torch.stack(Ys), dim=0)
             Y = [Y / (energy + 1e-18) for Y in Ys]
-            # Compute the L1 or L2 mask loss:
+            # For the BCE_IBM case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
+            if args.loss == 'BCE_IBM':
+                Y = torch.stack(Y)
+                _, Y = Y.max(0)
+                Y = torch.nn.functional.one_hot(Y,4).unbind(4)
+            # Compute the L1, L2 or Binary Cross-Entropy mask loss:
             for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                 loss = loss + criterion(Y_hat, target)
         # IF MAPPING LOSS:
         else:
             # Apply the masks
-            Y_hats = [Y_hat * mag for Y_hat in Y_hats] # obtaining magnitude estimates
+            Y_hats = [Y_hat * mag for Y_hat in Y_hats]    # obtaining magnitude estimates
             # IF TIME DOMAIN LOSS
             if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr']:
                 phase = torchaudio.functional.angle(X) # phase from mixture STFT X
@@ -127,12 +140,14 @@ def train(args, unmix, device, train_sampler, optimizer):
 
 
 def valid(args, unmix, device, valid_sampler):
-    #Sames as train() above, but with unmix.eval(), no backward and no_grad() mode
+    #Sames as train() --above--, but with unmix.eval(), no backward and no_grad() mode
     losses = utils.AverageMeter()
     if args.loss in ['L2time', 'L2mask', 'L2freq']:
         criteria = [torch.nn.MSELoss() for t in args.targets]
     if args.loss in ['L1time', 'L1mask', 'L1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
+    if args.loss in ['BCE_IRM', 'BCE_IBM']:
+        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
     unmix.eval()
     with torch.no_grad():
         for x, y in valid_sampler:
@@ -143,10 +158,16 @@ def valid(args, unmix, device, valid_sampler):
             mag = torchaudio.functional.complex_norm(X)
             loss = 0
             #IF FREQUENCY MASKING:
-            if args.loss in ['L1mask', 'L2mask']:
+            if args.loss in ['L1mask', 'L2mask', 'BCE_IRM', 'BCE_IBM']:
                 Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
                 energy = torch.sum(torch.stack(Ys), dim=0)
                 Y = [Y / (energy + 1e-18) for Y in Ys]
+                # For the BCE_IBM case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
+                if args.loss == 'BCE_IBM':
+                    Y = torch.stack(Y)
+                    _, Y = Y.max(0)
+                    Y = torch.nn.functional.one_hot(Y, 4).unbind(4)
+                # Compute the L1, L2 or Binary Cross-Entropy mask loss:
                 for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                     loss = loss + criterion(Y_hat, target)
             #IF NOT MASKING
@@ -180,6 +201,7 @@ def valid(args, unmix, device, valid_sampler):
 
 
 def get_statistics(args, dataloader):
+    # If using a different dataset than MUSDB18HQ, uncomment this and import sklearn.preprocessing
     '''
     # What follows computes the dataset statistics with sklearn
     scaler = sklearn.preprocessing.StandardScaler()
@@ -206,7 +228,7 @@ def get_statistics(args, dataloader):
     return scaler.mean_, std
     '''
 
-    # We directly load the MUSDB18-HQ statistics from file
+    # Otherwise, we directly load the MUSDB18-HQ statistics from file
     return np.load('scalermean.npy'), np.load('std.npy')
 
 def main():
@@ -216,7 +238,8 @@ def main():
                         choices=[
                             'L2freq', 'L1freq', 'L2time', 'L1time',
                             'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
-                            'MinSNRsdsdr'
+                            'MinSNRsdsdr', 'CrossEntropy', 'BCE_IRM',
+                            'BCE_IBM'
                         ],
                         help='kind of loss used during training')
 
