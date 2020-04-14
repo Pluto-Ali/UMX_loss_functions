@@ -99,11 +99,12 @@ def train(args, unmix, device, train_sampler, optimizer):
             if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                 Y = torch.stack(Y)
                 _, Y = Y.max(0)
-                if args.loss == 'BinaryCrossEntropy':
+                if args.loss == 'BinaryCrossEntropy':   # We one-hot code the targets it for aggregating all BCEs
                     Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
-            # Compute the L1, L2 or Binary Cross-Entropy mask loss:
+            # Compute Cross-Entropy mask loss:
             if args.loss == 'CrossEntropy':
                 loss = criteria(Y_hats, Y)
+            # Or Compute the aggregate losses (L1, L2 or BinaryCrossEntropy)
             else:
                 for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                     loss = loss + criterion(Y_hat, target)
@@ -174,7 +175,7 @@ def valid(args, unmix, device, valid_sampler):
                 if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                     Y = torch.stack(Y)
                     _, Y = Y.max(0)
-                    if args.loss == 'BinaryCrossEntropy':    # We one-hot code the gargets it for aggregating all BCEs
+                    if args.loss == 'BinaryCrossEntropy':    # We one-hot code the targets it for aggregating all BCEs
                         Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
                 if args.loss == 'CrossEntropy':
                     loss = criteria(Y_hats, Y)
