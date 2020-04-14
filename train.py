@@ -183,7 +183,7 @@ def valid(args, unmix, device, valid_sampler):
                     if args.loss == 'SISDRtime':
                         loss = SISDR(y, y_hats)
                     elif args.loss == 'MinSNRsdsdr':
-                        loss = minSDSDR(y, y_hats)
+                        loss = minSNRsdsdr(y, y_hats)
                     else:
                         for Y_hat, target, criterion in zip(y_hats, y, criteria):
                             loss = loss + criterion(Y_hat, target)

@@ -1,4 +1,4 @@
-#available losses  'L2freq', 'L1freq', 'L2time', 'L1time','L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq','MinSNRsdsdr'
+#available losses  'L2freq', 'L1freq', 'L2time', 'L1time','L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq','MinSNRsdsdr', 'BCE_IRM', 'BCE_IBM'
 
 #E36, FINAL BASELINE: JOINT MODEL WITH L2 ON MAGNITUDE ESTIMATES
 python train.py --root /home/enricguso/datasets/musdb18hq --is-wav --output /home/enricguso/PycharmProjects/temp_experiments/e36_finalbaseline --nb-workers 4 --hidden-size 1024 --lr 0.001 --loss L2freq #--model /home/enricguso/PycharmProjects/temp_experiments/e36_finalbaseline --epochs 1000 #uncomment this for resuming training
