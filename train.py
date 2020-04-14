@@ -64,8 +64,10 @@ def train(args, unmix, device, train_sampler, optimizer):
         criteria = [torch.nn.MSELoss() for t in args.targets]
     if args.loss in ['L1time', 'L1mask', 'L1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
-    if args.loss in ['BCE_IRM', 'BCE_IBM']:
+    if args.loss == 'BinaryCrossEntropy':
         criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
+    if args.loss == 'CrossEntropy':
+        criteria = torch.nn.CrossEntropyLoss()
     # Set model mode as train.
     unmix.train()
     print('Chosen loss: ')
@@ -87,20 +89,26 @@ def train(args, unmix, device, train_sampler, optimizer):
         mag = (torchaudio.functional.complex_norm(X))
         loss = 0
         # IF FREQUENCY MASKING LOSS:
-        if args.loss in ['L1mask', 'L2mask', 'BCE_IRM', 'BCE_IBM']:
+        if args.loss in ['L1mask', 'L2mask', 'CrossEntropy', 'BinaryCrossEntropy']:
             # Targets are built from the STFT(y)
             Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
             # Energy normalization for convergence, obtaining IRM Y:
             energy = torch.sum(torch.stack(Ys), dim=0)
             Y = [Y / (energy + 1e-18) for Y in Ys]
             # For the BCE_IBM case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
-            if args.loss == 'BCE_IBM':
+            if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                 Y = torch.stack(Y)
                 _, Y = Y.max(0)
-                Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
+                if args.loss == 'BinaryCrossEntropy':
+                    Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
             # Compute the L1, L2 or Binary Cross-Entropy mask loss:
-            for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
-                loss = loss + criterion(Y_hat, target)
+            if args.loss == 'CrossEntropy':
+                print('HOLA')
+                loss = criteria(Y_hats, Y)
+                print('HOLA')
+            else:
+                for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
+                    loss = loss + criterion(Y_hat, target)
         # IF MAPPING LOSS:
         else:
             # Apply the masks
@@ -146,8 +154,10 @@ def valid(args, unmix, device, valid_sampler):
         criteria = [torch.nn.MSELoss() for t in args.targets]
     if args.loss in ['L1time', 'L1mask', 'L1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
-    if args.loss in ['BCE_IRM', 'BCE_IBM']:
+    if args.loss == 'BinaryCrossEntropy':
         criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
+    if args.loss == 'CrossEntropy':
+        criteria = torch.nn.CrossEntropyLoss()
     unmix.eval()
     with torch.no_grad():
         for x, y in valid_sampler:
@@ -158,18 +168,22 @@ def valid(args, unmix, device, valid_sampler):
             mag = torchaudio.functional.complex_norm(X)
             loss = 0
             #IF FREQUENCY MASKING:
-            if args.loss in ['L1mask', 'L2mask', 'BCE_IRM', 'BCE_IBM']:
+            if args.loss in ['L1mask', 'L2mask', 'BCE_IRM', 'BCE_IBM', 'CrossEntropy']:
                 Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
                 energy = torch.sum(torch.stack(Ys), dim=0)
                 Y = [Y / (energy + 1e-18) for Y in Ys]
                 # For the BCE_IBM case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
-                if args.loss == 'BCE_IBM':
+                if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                     Y = torch.stack(Y)
                     _, Y = Y.max(0)
-                    Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
+                    if args.loss == 'BCE_IBM':
+                        Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
                 # Compute the L1, L2 or Binary Cross-Entropy mask loss:
-                for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
-                    loss = loss + criterion(Y_hat, target)
+                if args.loss == 'CrossEntropy':
+                    loss = criteria(Y_hats, Y)
+                else:
+                    for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
+                        loss = loss + criterion(Y_hat, target)
             #IF NOT MASKING
             else: #Apply the masks
                 Y_hats = [Y_hat * mag for Y_hat in Y_hats]
@@ -238,8 +252,7 @@ def main():
                         choices=[
                             'L2freq', 'L1freq', 'L2time', 'L1time',
                             'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
-                            'MinSNRsdsdr', 'CrossEntropy', 'BCE_IRM',
-                            'BCE_IBM'
+                            'MinSNRsdsdr', 'CrossEntropy', 'BinaryCrossEntropy',
                         ],
                         help='kind of loss used during training')
 
