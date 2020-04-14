@@ -103,9 +103,7 @@ def train(args, unmix, device, train_sampler, optimizer):
                     Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
             # Compute the L1, L2 or Binary Cross-Entropy mask loss:
             if args.loss == 'CrossEntropy':
-                print('HOLA')
                 loss = criteria(Y_hats, Y)
-                print('HOLA')
             else:
                 for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                     loss = loss + criterion(Y_hat, target)
@@ -172,15 +170,15 @@ def valid(args, unmix, device, valid_sampler):
                 Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
                 energy = torch.sum(torch.stack(Ys), dim=0)
                 Y = [Y / (energy + 1e-18) for Y in Ys]
-                # For the BCE_IBM case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
+                # For the Cross-Entropy cases, compute IBM setting argmax(pixels) among all sources to 1 in a zeros
                 if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                     Y = torch.stack(Y)
                     _, Y = Y.max(0)
-                    if args.loss == 'BCE_IBM':
+                    if args.loss == 'BinaryCrossEntropy':    # We one-hot code the gargets it for aggregating all BCEs
                         Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
-                # Compute the L1, L2 or Binary Cross-Entropy mask loss:
                 if args.loss == 'CrossEntropy':
                     loss = criteria(Y_hats, Y)
+                # Compute the L1, L2 or Binary Cross-Entropy mask loss:
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                         loss = loss + criterion(Y_hat, target)
