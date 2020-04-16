@@ -95,7 +95,7 @@ def train(args, unmix, device, train_sampler, optimizer):
             # Energy normalization for convergence, obtaining IRM Y:
             energy = torch.sum(torch.stack(Ys), dim=0)
             Y = [Y / (energy + 1e-18) for Y in Ys]
-            # For the BCE_IBM case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
+            # For the BCE case, compute IBM setting argmax(pixels) among all sources to 1 and the rest to 0
             if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                 Y = torch.stack(Y)
                 _, Y = Y.max(0)
@@ -167,14 +167,14 @@ def valid(args, unmix, device, valid_sampler):
             mag = torchaudio.functional.complex_norm(X)
             loss = 0
             #IF FREQUENCY MASKING:
-            if args.loss in ['L1mask', 'L2mask', 'BCE_IRM', 'BCE_IBM', 'CrossEntropy']:
+            if args.loss in ['L1mask', 'L2mask', 'CrossEntropy', 'BinaryCrossEntropy']:
                 Ys = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
                 energy = torch.sum(torch.stack(Ys), dim=0)
                 Y = [Y / (energy + 1e-18) for Y in Ys]
                 # For the Cross-Entropy cases, compute IBM setting argmax(pixels) among all sources to 1 in a zeros
                 if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                     Y = torch.stack(Y)
-                    _, Y = Y.max(0)
+                    _, Y = Y.max(0)   # Returns which source has the maximum amplitude at each TF pixel
                     if args.loss == 'BinaryCrossEntropy':    # We one-hot code the targets it for aggregating all BCEs
                         Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
                 if args.loss == 'CrossEntropy':
