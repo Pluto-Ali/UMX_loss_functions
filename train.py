@@ -17,7 +17,7 @@ import torchaudio
 
 
 tqdm.monitor_interval = 0
-
+# Firstly we define additional Losses:
 def SISDR(s, s_hat):
     """Computes the Scale-Invariant SDR as in [1]_.
     References
@@ -56,6 +56,7 @@ def minSNRsdsdr(s,s_hat):
     sdsdr = snr + 20*torch.log10(torch.dot(s_hat,s)/(s**2).sum() + EPS)
     return -torch.min(snr, sdsdr)
 
+# Next, train and validation loops
 def train(args, unmix, device, train_sampler, optimizer):
     losses = utils.AverageMeter()
 
