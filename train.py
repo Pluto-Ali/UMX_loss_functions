@@ -100,7 +100,7 @@ def train(args, unmix, device, train_sampler, optimizer):
             if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                 Y = torch.stack(Y)
                 _, Y = Y.max(0)
-                if args.loss == 'BinaryCrossEntropy':   # We one-hot code the targets it for aggregating all BCEs
+                if args.loss == 'BinaryCrossEntropy':   # We one-hot encode the targets for aggregating all BCEs
                     Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
             # Compute Cross-Entropy mask loss:
             if args.loss == 'CrossEntropy':
@@ -114,7 +114,7 @@ def train(args, unmix, device, train_sampler, optimizer):
             # Apply the masks
             Y_hats = [Y_hat * mag for Y_hat in Y_hats]    # obtaining magnitude estimates
             # IF TIME DOMAIN LOSS
-            if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr']:
+            if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr', 'LogMSE']:
                 phase = torchaudio.functional.angle(X) # phase from mixture STFT X
                 # Incorporate mixture phase into our estimates
                 specs = [torch.stack([magnitude * torch.cos(phase),
@@ -129,7 +129,10 @@ def train(args, unmix, device, train_sampler, optimizer):
                     loss = minSNRsdsdr(y, y_hats)
                 else:
                     for Y_hat, target, criterion in zip(y_hats, y, criteria):
-                        loss = loss + criterion(Y_hat, target)
+                        if args.loss == 'LogMSE':
+                            loss = loss + 10 * torch.log10(criterion(Y_hat, target))
+                        else:
+                            loss = loss + criterion(Y_hat, target)
             # IF FREQUENCY MAPPING:
             else:
                 # Targets are abs(stft(y))
@@ -143,14 +146,14 @@ def train(args, unmix, device, train_sampler, optimizer):
 
         loss.backward()
         optimizer.step()
-        losses.update(loss.item())#, Y_hat.size(1))
+        losses.update(loss.item())
     return losses.avg
 
 
 def valid(args, unmix, device, valid_sampler):
     #Sames as train() --above--, but with unmix.eval(), no backward and no_grad() mode
     losses = utils.AverageMeter()
-    if args.loss in ['L2time', 'L2mask', 'L2freq']:
+    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogMSE']:
         criteria = [torch.nn.MSELoss() for t in args.targets]
     if args.loss in ['L1time', 'L1mask', 'L1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
@@ -176,7 +179,7 @@ def valid(args, unmix, device, valid_sampler):
                 if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                     Y = torch.stack(Y)
                     _, Y = Y.max(0)   # Returns which source has the maximum amplitude at each TF pixel
-                    if args.loss == 'BinaryCrossEntropy':    # We one-hot code the targets it for aggregating all BCEs
+                    if args.loss == 'BinaryCrossEntropy':    # We one-hot encode the targets for aggregating all BCEs
                         Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
                 if args.loss == 'CrossEntropy':
                     loss = criteria(Y_hats, Y)
@@ -188,7 +191,7 @@ def valid(args, unmix, device, valid_sampler):
             else: #Apply the masks
                 Y_hats = [Y_hat * mag for Y_hat in Y_hats]
                 #if time domain:
-                if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr']:
+                if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr', 'LogMSE']:
                     phase = torchaudio.functional.angle(X)
                     specs = [torch.stack([magnitude * torch.cos(phase),
                                           magnitude * torch.sin(phase)],
@@ -200,8 +203,12 @@ def valid(args, unmix, device, valid_sampler):
                         loss = minSNRsdsdr(y, y_hats)
                     else:
                         for Y_hat, target, criterion in zip(y_hats, y, criteria):
-                            loss = loss + criterion(Y_hat, target)
-                #if frequency domain mapping
+                            if args.loss == 'LogMSE':
+                                loss = loss + 10*torch.log10(criterion(Y_hat, target))
+                            else:
+                                loss = loss + criterion(Y_hat, target)
+
+                #if magnitude domain mapping
                 else:
                     Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
                     if args.loss == 'SISDRfreq':
@@ -209,7 +216,7 @@ def valid(args, unmix, device, valid_sampler):
                     else:
                         for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                             loss = loss + criterion(Y_hat, target)
-            losses.update(loss.item())#, Y_hat.size(1))
+            losses.update(loss.item())
 
         return losses.avg
 
@@ -253,6 +260,7 @@ def main():
                             'L2freq', 'L1freq', 'L2time', 'L1time',
                             'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
                             'MinSNRsdsdr', 'CrossEntropy', 'BinaryCrossEntropy',
+                            'LogMSE'
                         ],
                         help='kind of loss used during training')
 

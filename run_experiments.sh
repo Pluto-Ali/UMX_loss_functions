@@ -31,3 +31,13 @@ python eval.py --no-cuda --root /home/enricguso/datasets/musdb18hq --outdir /hom
 #E43, SISDR ON MAGNITUDE ESTIMATES
 python train.py --root /home/enricguso/datasets/musdb18hq --is-wav --output /home/enricguso/PycharmProjects/temp_experiments/e43_sisdrfreq --nb-workers 4 --hidden-size 1024 --lr 0.001 --loss SISDRfreq #--model /home/enricguso/PycharmProjects/temp_experiments/e43_sisdrfreq --epochs 1000 #uncomment this for resuming training
 python eval.py --no-cuda --root /home/enricguso/datasets/musdb18hq --outdir /home/enricguso/PycharmProjects/temp_experiments/e43_sisdrfreq --is-wav --evaldir /home/enricguso/PycharmProjects/temp_experiments/e43_sisdrfreq --model /home/enricguso/PycharmProjects/temp_experiments/e43_sisdrfreq --softmask
+
+#E44, min(SNR, SDSDR) ON TIME DOMAIN
+python train.py --root /home/enricguso/datasets/musdb18hq --is-wav --output /home/enricguso/PycharmProjects/temp_experiments/e44_MinSNRsdsdr --nb-workers 4 --hidden-size 1024 --lr 0.001 --loss MinSNRsdsdr #--model /home/enricguso/PycharmProjects/temp_experiments/e43_sisdrfreq --epochs 1000 #uncomment this for resuming training
+python eval.py --no-cuda --root /home/enricguso/datasets/musdb18hq --outdir /home/enricguso/PycharmProjects/temp_experiments/e44_MinSNRsdsdr --is-wav --evaldir /home/enricguso/PycharmProjects/temp_experiments/e44_MinSNRsdsdr --model /home/enricguso/PycharmProjects/temp_experiments/e44_MinSNRsdsdr --softmask
+
+#E45, BINARY CROSS ENTROPY ON IDEAL RATIO MASKS
+python train.py --root /home/enricguso/datasets/musdb18hq --is-wav --output /home/enricguso/PycharmProjects/temp_experiments/e45_BinaryCrossEntropy --nb-workers 4 --hidden-size 1024 --lr 0.001 --loss BinaryCrossEntropy #--model /home/enricguso/PycharmProjects/temp_experiments/e44_MinSNRsdsdr --epochs 1000
+#uncomment this for resuming training
+python eval.py --no-cuda --root /home/enricguso/datasets/musdb18hq --outdir /home/enricguso/PycharmProjects/temp_experiments/e45_BinaryCrossEntropy --is-wav --evaldir /home/enricguso/PycharmProjects/temp_experiments/e45_BinaryCrossEntropy --model /home/enricguso/PycharmProjects/temp_experiments/e45_BinaryCrossEntropy --softmask
+
