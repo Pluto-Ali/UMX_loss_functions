@@ -104,6 +104,7 @@ def train(args, unmix, device, train_sampler, optimizer):
                     Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
             # Compute Cross-Entropy mask loss:
             if args.loss == 'CrossEntropy':
+                Y_hats = torch.stack(Y_hats).permute(1,0,2,3,4)    # Reshape so it matches expected CE input
                 loss = criteria(Y_hats, Y)
             # Or Compute the aggregate losses (L1, L2 or BinaryCrossEntropy)
             else:
@@ -182,6 +183,7 @@ def valid(args, unmix, device, valid_sampler):
                     if args.loss == 'BinaryCrossEntropy':    # We one-hot encode the targets for aggregating all BCEs
                         Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
                 if args.loss == 'CrossEntropy':
+                    Y_hats = torch.stack(Y_hats).permute(1, 0, 2, 3, 4)    # Reshape so it matches expected CE input
                     loss = criteria(Y_hats, Y)
                 # Compute the L1, L2 or Binary Cross-Entropy mask loss:
                 else:
