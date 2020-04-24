@@ -66,7 +66,7 @@ def train(args, unmix, device, train_sampler, optimizer):
     if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
     if args.loss == 'BinaryCrossEntropy':
-        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
+        criteria = torch.nn.BCEWithLogitsLoss()
     if args.loss == 'CrossEntropy':
         criteria = torch.nn.CrossEntropyLoss()
     # Set model mode as train.
@@ -100,13 +100,11 @@ def train(args, unmix, device, train_sampler, optimizer):
             if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                 Y = torch.stack(Y)
                 _, Y = Y.max(0)
-                if args.loss == 'BinaryCrossEntropy':   # We one-hot encode the targets for aggregating all BCEs
-                    Y = torch.nn.functional.one_hot(Y,4).float().unbind(4)
-            # Compute Cross-Entropy mask loss:
-            if args.loss == 'CrossEntropy':
+                if args.loss == 'BinaryCrossEntropy':   # We one-hot encode the targets (1 or 0 instead of labels)
+                    Y = torch.nn.functional.one_hot(Y,4).float().permute(0,4,1,2,3)
                 Y_hats = torch.stack(Y_hats).permute(1,0,2,3,4)    # Reshape so it matches expected CE input
                 loss = criteria(Y_hats, Y)
-            # Or Compute the aggregate losses (L1, L2 or BinaryCrossEntropy)
+            # Or Compute the aggregate losses (L1, L2)
             else:
                 for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                     loss = loss + criterion(Y_hat, target)
@@ -159,7 +157,7 @@ def valid(args, unmix, device, valid_sampler):
     if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
     if args.loss == 'BinaryCrossEntropy':
-        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
+        criteria = torch.nn.BCEWithLogitsLoss()
     if args.loss == 'CrossEntropy':
         criteria = torch.nn.CrossEntropyLoss()
     unmix.eval()
@@ -180,12 +178,11 @@ def valid(args, unmix, device, valid_sampler):
                 if args.loss in ['BinaryCrossEntropy', 'CrossEntropy']:
                     Y = torch.stack(Y)
                     _, Y = Y.max(0)   # Returns which source has the maximum amplitude at each TF pixel
-                    if args.loss == 'BinaryCrossEntropy':    # We one-hot encode the targets for aggregating all BCEs
-                        Y = torch.nn.functional.one_hot(Y, 4).float().unbind(4)
-                if args.loss == 'CrossEntropy':
+                    if args.loss == 'BinaryCrossEntropy':    # We one-hot encode the targets (1 or 0 instead of labels)
+                        Y = torch.nn.functional.one_hot(Y, 4).float().permute(0,4,1,2,3)
                     Y_hats = torch.stack(Y_hats).permute(1, 0, 2, 3, 4)    # Reshape so it matches expected CE input
                     loss = criteria(Y_hats, Y)
-                # Compute the L1, L2 or Binary Cross-Entropy mask loss:
+                # Compute the L1, L2 MASK loss:
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                         loss = loss + criterion(Y_hat, target)
