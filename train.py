@@ -61,9 +61,9 @@ def train(args, unmix, device, train_sampler, optimizer):
     losses = utils.AverageMeter()
 
     # If losses use L1 or L2, we initialize them:
-    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogL2']:
+    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq']:
         criteria = [torch.nn.MSELoss() for t in args.targets]
-    if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1']:
+    if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
     if args.loss == 'BinaryCrossEntropy':
         criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
@@ -116,7 +116,7 @@ def train(args, unmix, device, train_sampler, optimizer):
             # Apply the masks
             Y_hats = [Y_hat * mag for Y_hat in Y_hats]    # obtaining magnitude estimates
             # IF TIME DOMAIN LOSS
-            if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr', 'LogL2', 'LogL1']:
+            if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr', 'LogL2time', 'LogL1time']:
                 phase = torchaudio.functional.angle(X) # phase from mixture STFT X
                 # Incorporate mixture phase into our estimates
                 specs = [torch.stack([magnitude * torch.cos(phase),
@@ -131,7 +131,7 @@ def train(args, unmix, device, train_sampler, optimizer):
                     loss = minSNRsdsdr(y, y_hats)
                 else:
                     for Y_hat, target, criterion in zip(y_hats, y, criteria):
-                        if args.loss in ['LogL1', 'LogL2']:
+                        if args.loss in ['LogL1time', 'LogL2time']:
                             loss = loss + 10 * torch.log10(criterion(Y_hat, target) + EPS)
                         else:
                             loss = loss + criterion(Y_hat, target)
@@ -144,7 +144,10 @@ def train(args, unmix, device, train_sampler, optimizer):
                     loss = SISDR(Y, Y_hats)
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
-                        loss = loss + criterion(Y_hat, target)
+                        if args.loss in ['LogL1freq', 'LogL2freq']:
+                            loss = loss + 10 * torch.log10(criterion(Y_hat, target) + EPS)
+                        else:
+                            loss = loss + criterion(Y_hat, target)
 
         loss.backward()
         optimizer.step()
@@ -155,9 +158,9 @@ def train(args, unmix, device, train_sampler, optimizer):
 def valid(args, unmix, device, valid_sampler):
     #Sames as train() --above--, but with unmix.eval(), no backward and no_grad() mode
     losses = utils.AverageMeter()
-    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogL2']:
+    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq']:
         criteria = [torch.nn.MSELoss() for t in args.targets]
-    if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1']:
+    if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
         criteria = [torch.nn.L1Loss() for t in args.targets]
     if args.loss == 'BinaryCrossEntropy':
         criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
@@ -195,7 +198,7 @@ def valid(args, unmix, device, valid_sampler):
             else: #Apply the masks
                 Y_hats = [Y_hat * mag for Y_hat in Y_hats]
                 #if time domain:
-                if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr', 'LogL2', 'LogL1']:
+                if args.loss in ['L2time', 'L1time', 'SISDRtime', 'MinSNRsdsdr', 'LogL2time', 'LogL1time']:
                     phase = torchaudio.functional.angle(X)
                     specs = [torch.stack([magnitude * torch.cos(phase),
                                           magnitude * torch.sin(phase)],
@@ -207,7 +210,7 @@ def valid(args, unmix, device, valid_sampler):
                         loss = minSNRsdsdr(y, y_hats)
                     else:
                         for Y_hat, target, criterion in zip(y_hats, y, criteria):
-                            if args.loss in ['LogL1', 'LogL2']:
+                            if args.loss in ['LogL1time', 'LogL2time']:
                                 loss = loss + 10*torch.log10(criterion(Y_hat, target) + EPS)
                             else:
                                 loss = loss + criterion(Y_hat, target)
@@ -219,7 +222,10 @@ def valid(args, unmix, device, valid_sampler):
                         loss = SISDR(Y, Y_hats)
                     else:
                         for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
-                            loss = loss + criterion(Y_hat, target)
+                            if args.loss in ['LogL1freq', 'LogL2freq']:
+                                loss = loss + 10 * torch.log10(criterion(Y_hat, target) + EPS)
+                            else:
+                                loss = loss + criterion(Y_hat, target)
             losses.update(loss.item())
 
         return losses.avg
@@ -264,7 +270,7 @@ def main():
                             'L2freq', 'L1freq', 'L2time', 'L1time',
                             'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
                             'MinSNRsdsdr', 'CrossEntropy', 'BinaryCrossEntropy',
-                            'LogL2', 'LogL1'
+                            'LogL2time', 'LogL1time', 'LogL2freq', 'LogL1freq'
                         ],
                         help='kind of loss used during training')
 
