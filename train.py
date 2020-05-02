@@ -56,19 +56,21 @@ def minSNRsdsdr(s,s_hat):
     sdsdr = snr + 20*torch.log10(torch.dot(s_hat,s)/(s**2).sum() + EPS)
     return -torch.min(snr, sdsdr)
 
+def create_criteria(loss):
+    if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq']:
+        criteria = [torch.nn.MSELoss() for t in args.targets]
+    if loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
+        criteria = [torch.nn.L1Loss() for t in args.targets]
+    if loss == 'BinaryCrossEntropy':
+        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
+    if loss == 'CrossEntropy':
+        criteria = torch.nn.CrossEntropyLoss()
+    return criteria
+
 # Next, train and validation loops
 def train(args, unmix, device, train_sampler, optimizer):
     losses = utils.AverageMeter()
-
-    # If losses use L1 or L2, we initialize them:
-    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq']:
-        criteria = [torch.nn.MSELoss() for t in args.targets]
-    if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
-        criteria = [torch.nn.L1Loss() for t in args.targets]
-    if args.loss == 'BinaryCrossEntropy':
-        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
-    if args.loss == 'CrossEntropy':
-        criteria = torch.nn.CrossEntropyLoss()
+    criteria = create_criteria(args.loss)
     # Set model mode as train.
     unmix.train()
     print('Chosen loss: ')
@@ -158,14 +160,7 @@ def train(args, unmix, device, train_sampler, optimizer):
 def valid(args, unmix, device, valid_sampler):
     #Sames as train() --above--, but with unmix.eval(), no backward and no_grad() mode
     losses = utils.AverageMeter()
-    if args.loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq']:
-        criteria = [torch.nn.MSELoss() for t in args.targets]
-    if args.loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
-        criteria = [torch.nn.L1Loss() for t in args.targets]
-    if args.loss == 'BinaryCrossEntropy':
-        criteria = [torch.nn.BCEWithLogitsLoss() for t in args.targets]
-    if args.loss == 'CrossEntropy':
-        criteria = torch.nn.CrossEntropyLoss()
+    criteria = create_criteria(args.loss)
     unmix.eval()
     with torch.no_grad():
         for x, y in valid_sampler:
