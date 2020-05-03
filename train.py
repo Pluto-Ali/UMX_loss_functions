@@ -56,7 +56,24 @@ def minSNRsdsdr(s,s_hat):
     sdsdr = snr + 20*torch.log10(torch.dot(s_hat,s)/(s**2).sum() + EPS)
     return -torch.min(snr, sdsdr)
 
-def create_criteria(loss, targets):
+def SNRPSA(s,s_hat):
+    """Computes the SNR_PSA as proposed in [1].
+
+    References
+    ----------
+    .. [1]
+
+    Parameters:
+        s: list of targets of any shape
+        s_hat: list of corresponding estimates of any shape
+    """
+    den = [torch.sqrt(x_hat)-torch.sqrt(x) for x, x_hat in zip(s, s_hat)]
+    prima = [-10*torch.log10(x.sum()/(xa ** 2).sum) for x, xa in zip(s, den)]
+    compressed = 20*torch.tanh(prima/20)
+    snrpsa = torch.stack(compressed).sum()/len(compressed)
+    return snrpsa
+
+def create_criteria(loss, targets):   # Instantiates the pytorch losses
     if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq', 'PSA']:
         criteria = [torch.nn.MSELoss() for t in targets]
     if loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
@@ -152,6 +169,8 @@ def train(args, unmix, device, train_sampler, optimizer):
                 # Compute the loss
                 if args.loss == 'SISDRfreq':
                     loss = SISDR(Y, Y_hats)
+                if args.loss == 'SNRPSA':
+                    loss = SNRPSA(Y, Y_hats)
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                         if args.loss in ['LogL1freq', 'LogL2freq']:
@@ -234,6 +253,8 @@ def valid(args, unmix, device, valid_sampler):
                     # Compute the loss
                     if args.loss == 'SISDRfreq':
                         loss = SISDR(Y, Y_hats)
+                    if args.loss == 'SNRPSA':
+                        loss = SNRPSA(Y, Y_hats)
                     else:
                         for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                             if args.loss in ['LogL1freq', 'LogL2freq']:
