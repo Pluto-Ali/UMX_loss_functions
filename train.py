@@ -57,7 +57,7 @@ def minSNRsdsdr(s,s_hat):
     return -torch.min(snr, sdsdr)
 
 def create_criteria(loss, targets):
-    if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq']:
+    if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq', 'PSA']:
         criteria = [torch.nn.MSELoss() for t in targets]
     if loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
         criteria = [torch.nn.L1Loss() for t in targets]
@@ -139,8 +139,16 @@ def train(args, unmix, device, train_sampler, optimizer):
                             loss = loss + criterion(Y_hat, target)
             # IF FREQUENCY MAPPING:
             else:
-                # Targets are abs(stft(y))
-                Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
+                # If using PSA, discount phase error to targets
+                if args.loss in ['PSA', 'SNRPSA']:
+                    cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]
+                    Ymag = [torchaudio.functional.complex_norm(target) for target in cY]
+                    phase = torchaudio.functional.angle(X)
+                    Yphase = [torchaudio.functional.angle(target) for target in cY]
+                    Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
+                # Else, targets are abs(stft(y))
+                else:
+                    Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
                 # Compute the loss
                 if args.loss == 'SISDRfreq':
                     loss = SISDR(Y, Y_hats)
@@ -212,7 +220,18 @@ def valid(args, unmix, device, valid_sampler):
 
                 #if magnitude domain mapping
                 else:
-                    Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
+                    # If PSA, discount phase
+                    if args.loss in ['PSA', 'SNRPSA']:
+                        cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]
+                        Ymag = [torchaudio.functional.complex_norm(target) for target in cY]
+                        phase = torchaudio.functional.angle(X)
+                        Yphase = [torchaudio.functional.angle(target) for target in cY]
+                        Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
+                    # Else just use abs(stft(Y)) as target
+                    else:
+                        Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in
+                             y]
+                    # Compute the loss
                     if args.loss == 'SISDRfreq':
                         loss = SISDR(Y, Y_hats)
                     else:
@@ -221,6 +240,8 @@ def valid(args, unmix, device, valid_sampler):
                                 loss = loss + 10 * torch.log10(criterion(Y_hat, target) + EPS)
                             else:
                                 loss = loss + criterion(Y_hat, target)
+                            if args.loss == 'PSA':
+                                loss = torch.sqrt(loss)
             losses.update(loss.item())
 
         return losses.avg
@@ -265,7 +286,8 @@ def main():
                             'L2freq', 'L1freq', 'L2time', 'L1time',
                             'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
                             'MinSNRsdsdr', 'CrossEntropy', 'BinaryCrossEntropy',
-                            'LogL2time', 'LogL1time', 'LogL2freq', 'LogL1freq'
+                            'LogL2time', 'LogL1time', 'LogL2freq', 'LogL1freq',
+                            'PSA', 'SNRPSA'
                         ],
                         help='kind of loss used during training')
 
