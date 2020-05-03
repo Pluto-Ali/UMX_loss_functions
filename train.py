@@ -141,11 +141,11 @@ def train(args, unmix, device, train_sampler, optimizer):
             else:
                 # If using PSA, discount phase error to targets
                 if args.loss in ['PSA', 'SNRPSA']:
-                    cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]
-                    Ymag = [torchaudio.functional.complex_norm(target) for target in cY]
-                    phase = torchaudio.functional.angle(X)
-                    Yphase = [torchaudio.functional.angle(target) for target in cY]
-                    Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
+                    cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]    # complex STFT(y)
+                    Ymag = [torchaudio.functional.complex_norm(target) for target in cY]   # magnitude of Y
+                    phase = torchaudio.functional.angle(X)   # phase of X
+                    Yphase = [torchaudio.functional.angle(target) for target in cY]   # phase of Y
+                    Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]   # PSA target
                 # Else, targets are abs(stft(y))
                 else:
                     Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
