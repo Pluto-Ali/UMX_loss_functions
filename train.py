@@ -67,28 +67,30 @@ def SNRPSA(s,s_hat):
         s: list of targets of any shape
         s_hat: list of corresponding estimates of any shape
     """
-    den = [torch.sqrt(x_hat)-torch.sqrt(x) for x, x_hat in zip(s, s_hat)]
-    prima = [-10*torch.log10(x.sum()/(xa ** 2).sum) for x, xa in zip(s, den)]
-    compressed = 20*torch.tanh(prima/20)
-    snrpsa = torch.stack(compressed).sum()/len(compressed)
-    return snrpsa
+    den = [torch.sqrt(x_hat)-torch.sqrt(x) for x, x_hat in zip(s, s_hat)]  #den is nan, revisar Paper?
+    #prima = [-10 * torch.log10(x.sum()/(xa ** 2).sum) for x, xa in zip(s, den)]
+    #compressed = 20*torch.tanh(prima/20)
+    #return torch.stack(compressed).sum()/len(compressed)
+    return 0
 
 def create_criteria(loss, targets):   # Instantiates the pytorch losses
     if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq', 'PSA']:
         criteria = [torch.nn.MSELoss() for t in targets]
-    if loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
+    elif loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
         criteria = [torch.nn.L1Loss() for t in targets]
-    if loss == 'BinaryCrossEntropy':
+    elif loss == 'BinaryCrossEntropy':
         criteria = [torch.nn.BCEWithLogitsLoss() for t in targets]
-    if loss == 'CrossEntropy':
+    elif loss == 'CrossEntropy':
         criteria = torch.nn.CrossEntropyLoss()
+    else:
+        criteria = []
     return criteria
 
 # Next, train and validation loops
 def train(args, unmix, device, train_sampler, optimizer):
     losses = utils.AverageMeter()
     criteria = create_criteria(args.loss, args.targets)
-    # Set model mode as train.a
+    # Set model mode as train.
     unmix.train()
     print('Chosen loss: ')
     print(args.loss)
