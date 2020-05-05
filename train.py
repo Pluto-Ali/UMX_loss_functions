@@ -57,21 +57,22 @@ def minSNRsdsdr(s,s_hat):
     return -torch.min(snr, sdsdr)
 
 def SNRPSA(s,s_hat):
-    """Computes the SNR_PSA as proposed in [1].
+    """Computes the SNR_PSA as proposed in [1], with no compression and a saturation value of 20
 
     References
     ----------
-    .. [1]
+    .. [1] Erdogan, Hakan, and Takuya Yoshioka. "Investigations on Data Augmentation and Loss Functions
+    for Deep Learning Based Speech-Background Separation." Interspeech. 2018.
 
     Parameters:
-        s: list of targets of any shape
-        s_hat: list of corresponding estimates of any shape
+        s: list of targets of any shape, with len(x) = #sources
+        s_hat: list of corresponding estimates
     """
-    den = [torch.sqrt(x_hat)-torch.sqrt(x) for x, x_hat in zip(s, s_hat)]  #den is nan, revisar Paper?
-    #prima = [-10 * torch.log10(x.sum()/(xa ** 2).sum) for x, xa in zip(s, den)]
-    #compressed = 20*torch.tanh(prima/20)
-    #return torch.stack(compressed).sum()/len(compressed)
-    return 0
+    EPS = torch.finfo(s[0].dtype).eps
+    den = [x_hat - x for x, x_hat in zip(s, s_hat)]
+    prima = [-10 * torch.log10((x ** 2).sum()/(xa ** 2).sum() + EPS) for x, xa in zip(s, den)]
+    clipping = [20*torch.tanh(x/20) for x in prima]
+    return torch.stack(clipping).sum()/len(clipping)
 
 def create_criteria(loss, targets):   # Instantiates the pytorch losses
     if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq', 'PSA']:
