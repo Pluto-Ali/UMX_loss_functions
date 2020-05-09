@@ -240,16 +240,17 @@ def valid(args, unmix, device, valid_sampler):
                             else:
                                 loss = loss + criterion(Y_hat, target)
 
-                #if magnitude domain mapping
+                # IF FREQUENCY MAPPING:
                 else:
-                    # If PSA, discount phase
+                    # If using PSA, discount phase error to targets
                     if args.loss in ['PSA', 'SNRPSA']:
-                        cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]
-                        Ymag = [torchaudio.functional.complex_norm(target) for target in cY]
-                        phase = torchaudio.functional.angle(X)
-                        Yphase = [torchaudio.functional.angle(target) for target in cY]
-                        Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
-                    # Else just use abs(stft(Y)) as target
+                        cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]  # complex STFT(y)
+                        Ymag = [torchaudio.functional.complex_norm(target) for target in cY]  # magnitude of Y
+                        phase = torchaudio.functional.angle(X)  # phase of X
+                        Yphase = [torchaudio.functional.angle(target) for target in cY]  # phase of Y
+                        Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in
+                             zip(Ymag, Yphase)]  # PSA target
+                    # Else, targets are abs(stft(y))
                     else:
                         Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in
                              y]
@@ -264,10 +265,7 @@ def valid(args, unmix, device, valid_sampler):
                                 loss = loss + 10 * torch.log10(criterion(Y_hat, target) + EPS)
                             else:
                                 loss = loss + criterion(Y_hat, target)
-                            if args.loss == 'PSA':
-                                loss = torch.sqrt(loss)
             losses.update(loss.item())
-
         return losses.avg
 
 
