@@ -238,20 +238,24 @@ class OpenUnmixSingle(nn.Module):
             torch.ones(self.nb_output_bins).float()
         )
 
+        #declare softmax for sum(masks)=1
+        #self.softmax = torch.nn.Softmax(0)
+
 
     def forward(self, x):
         # check for waveform or spectrogram
         # transform to spectrogram if (nb_samples, nb_channels, nb_timesteps)
         # and reduce feature dimensions, therefore we reshape
         x = self.transform(x)
+        #mix = x.detach().clone()
         nb_frames, nb_samples, nb_channels, nb_bins = x.data.shape
 
         # crop
         x = x[..., :self.nb_bins]
 
         # shift and scale input to mean=0 std=1 (across all bins)
-        x += self.input_mean
-        x *= self.input_scale
+        x += (self.input_mean ** 2)
+        x *= (self.input_scale ** 2)
 
         # to (nb_frames*nb_samples, nb_channels*nb_bins)
         # and encode to (nb_frames*nb_samples, hidden_size)
@@ -307,5 +311,5 @@ class OpenUnmixSingle(nn.Module):
         x_2 = F.relu(x_2)
         x_3 = F.relu(x_3)
         x_4 = F.relu(x_4)
-
         return [x_1, x_2, x_3, x_4]
+
