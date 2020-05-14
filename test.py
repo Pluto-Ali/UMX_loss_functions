@@ -121,7 +121,7 @@ def separate(
     X = unmix.stft(audio_torch).permute(3, 0, 1, 2, 4)
     # Apply the mask
     mag = torchaudio.functional.complex_norm(X)
-    V = [Y_hat * mag for Y_hat in V]
+    V = [Y_hat * mag for Y_hat in V] #TODO: check if we need to do (Y_hat ** 2) for SNRPSA. Re-run get_statistics
     # From torch to numpy complex, for norbert EM algorithm
     V = np.array([m.cpu().detach().numpy() for m in V])[:, :, 0, :, :]
     V = V.transpose(1,3,2,0)

@@ -68,6 +68,7 @@ def SNRPSA(s,s_hat):
         s: list of targets of any shape, with len(x) = #sources
         s_hat: list of corresponding estimates
     """
+    #s_hat = [x ** 2 for x in s_hat]
     EPS = torch.finfo(s[0].dtype).eps
     den = [x_hat - x for x, x_hat in zip(s, s_hat)]
     prima = [-10 * torch.log10((x ** 2).sum()/(xa ** 2).sum() + EPS) for x, xa in zip(s, den)]
@@ -165,7 +166,10 @@ def train(args, unmix, device, train_sampler, optimizer):
                     Ymag = [torchaudio.functional.complex_norm(target) for target in cY]   # magnitude of Y
                     phase = torchaudio.functional.angle(X)   # phase of X
                     Yphase = [torchaudio.functional.angle(target) for target in cY]   # phase of Y
-                    Y = [(tarmag ** 0.5) * (torch.cos(phase - tarphase)) for tarmag, tarphase in zip(Ymag, Yphase)]   # PSA target
+                    if args.loss == 'SNRPSA':
+                        Y = [(tarmag ** 0.5) * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
+                    else:
+                        Y = [tarmag  * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
                 # Else, targets are abs(stft(y))
                 else:
                     Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
@@ -174,7 +178,6 @@ def train(args, unmix, device, train_sampler, optimizer):
                     loss = SISDR(Y, Y_hats)
                 if args.loss == 'SNRPSA':
                     loss = SNRPSA(Y, Y_hats)
-                    print(loss)
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                         if args.loss in ['LogL1freq', 'LogL2freq']:
@@ -249,8 +252,11 @@ def valid(args, unmix, device, valid_sampler):
                         Ymag = [torchaudio.functional.complex_norm(target) for target in cY]  # magnitude of Y
                         phase = torchaudio.functional.angle(X)  # phase of X
                         Yphase = [torchaudio.functional.angle(target) for target in cY]  # phase of Y
-                        Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in
-                             zip(Ymag, Yphase)]  # PSA target
+                        if args.loss == 'SNRPSA':
+                            Y = [(tarmag ** 0.5) * torch.cos(phase - tarphase) for tarmag, tarphase in
+                                 zip(Ymag, Yphase)]
+                        else:
+                            Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]
                     # Else, targets are abs(stft(y))
                     else:
                         Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in
@@ -272,7 +278,7 @@ def valid(args, unmix, device, valid_sampler):
 
 def get_statistics(args, dataloader):
     # If using a different dataset than MUSDB18HQ, uncomment this and import sklearn.preprocessing
-    '''
+
     # What follows computes the dataset statistics with sklearn
     scaler = sklearn.preprocessing.StandardScaler()
 
@@ -299,9 +305,9 @@ def get_statistics(args, dataloader):
 
     return scaler.mean_, std
 
-    '''
+
     # Otherwise, we directly load the MUSDB18-HQ statistics from file
-    return np.load('scalermean.npy'), np.load('std.npy')
+    #return np.load('scalermean.npy'), np.load('std.npy')
 
 def main():
     parser = argparse.ArgumentParser(description='Open Unmix Trainer')
@@ -435,6 +441,11 @@ def main():
     max_bin = utils.bandwidth_to_max_bin(
         train_dataset.sample_rate, args.nfft, args.bandwidth
     )
+    if args.loss == 'SNRPSA':
+        power = 2
+    else:
+        power = 1
+
     unmix = model.OpenUnmixSingle(
         n_fft=4096,
         n_hop=1024,
@@ -447,7 +458,7 @@ def main():
         input_scale=scaler_std,
         max_bin=max_bin,
         unidirectional=args.unidirectional,
-        power=1,
+        power=power,
     ).to(device)
     print('learning rate:')
     print(args.lr)

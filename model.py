@@ -134,7 +134,7 @@ class OpenUnmixSingle(nn.Module):
         Output: Power/Mag Spectrogram
                 (nb_frames, nb_samples, nb_channels, nb_bins)
         """
-
+        self.power = power
         super(OpenUnmixSingle, self).__init__()
         self.nb_output_bins = n_fft // 2 + 1
         if max_bin:
@@ -254,8 +254,8 @@ class OpenUnmixSingle(nn.Module):
         x = x[..., :self.nb_bins]
 
         # shift and scale input to mean=0 std=1 (across all bins)
-        x += (self.input_mean ** 2)
-        x *= (self.input_scale ** 2)
+        x += (self.input_mean ** self.power)
+        x *= (self.input_scale ** self.power)
 
         # to (nb_frames*nb_samples, nb_channels*nb_bins)
         # and encode to (nb_frames*nb_samples, hidden_size)
