@@ -238,16 +238,12 @@ class OpenUnmixSingle(nn.Module):
             torch.ones(self.nb_output_bins).float()
         )
 
-        #declare softmax for sum(masks)=1
-        #self.softmax = torch.nn.Softmax(0)
-
 
     def forward(self, x):
         # check for waveform or spectrogram
         # transform to spectrogram if (nb_samples, nb_channels, nb_timesteps)
         # and reduce feature dimensions, therefore we reshape
         x = self.transform(x)
-        #mix = x.detach().clone()
         nb_frames, nb_samples, nb_channels, nb_bins = x.data.shape
 
         # crop
@@ -312,45 +308,4 @@ class OpenUnmixSingle(nn.Module):
         x_3 = F.relu(x_3)
         x_4 = F.relu(x_4)
 
-        '''
-        masks = [x_1, x_2, x_3, x_4]
-
-        x_1 = masks[0] * mix
-        x_2 = masks[1] * mix
-        x_3 = masks[2] * mix
-        x_4 = masks[3] * mix
-        '''
-
         return [x_1, x_2, x_3, x_4]
-
-
-class OpenUnmixJoint(nn.Module):
-    def __init__(
-        self,
-        targets,
-        *args, **kwargs
-    ):
-        super(OpenUnmixJoint, self).__init__()
-
-        self.stft = STFT(n_fft=4096, n_hop=1024)
-        self.spec = Spectrogram(power=1, mono=False)
-
-        self.transform = nn.Sequential(self.stft, self.spec)
-
-        self.models = nn.ModuleList(
-            [OpenUnmix(*args, **kwargs) for target in targets]
-        )
-        self.softmax = torch.nn.Softmax(0)
-
-    def forward(self, x):
-        X = self.transform(x)
-
-        logit_mask_list = []
-        for umx_single_source in self.models:
-            logit_mask_list.append(umx_single_source(X))
-
-        masks = self.softmax(torch.stack(logit_mask_list))
-        out = []
-        for i, models in enumerate(self.models):
-            out.append(masks[i, ...] * X)
-        return out

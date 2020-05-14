@@ -107,6 +107,11 @@ def train(args, unmix, device, train_sampler, optimizer):
         optimizer.zero_grad()
         # Obtain tha estimated magnitude mask and reshape it
         Y_hats = unmix(x)    # outputs list of masks: frames, batch, channels, bins; len=sources
+        print('MEAN')
+        print(torch.mean(Y_hats[0]))
+        print('MIN')
+        print(torch.min(Y_hats[0]))
+
         X = unmix.stft(x).permute(3,0,1,2,4)
         # Compute input or mixture magnitude from mixture spectrogram X
         mag = (torchaudio.functional.complex_norm(X))
@@ -161,11 +166,12 @@ def train(args, unmix, device, train_sampler, optimizer):
             else:
                 # If using PSA, discount phase error to targets
                 if args.loss in ['PSA', 'SNRPSA']:
+                    Y_hats = [Y_hat ** 0.5 for Y_hat in Y_hats] # Apply power-law compression to model's estimate
                     cY = [unmix.stft(target).permute(3, 0, 1, 2, 4) for target in y]    # complex STFT(y)
                     Ymag = [torchaudio.functional.complex_norm(target) for target in cY]   # magnitude of Y
-                    phase = torchaudio.functional.angle(X)   # phase of X
+                    phase = torchaudio.functional.angle(X)   # mixture phase,  angle(X)
                     Yphase = [torchaudio.functional.angle(target) for target in cY]   # phase of Y
-                    Y = [tarmag * torch.cos(phase - tarphase) for tarmag, tarphase in zip(Ymag, Yphase)]   # PSA target
+                    Y = [torch.sqrt(tarmag) * torch.abs(torch.cos(phase - tarphase)) for tarmag, tarphase in zip(Ymag, Yphase)]   # PSA target
                 # Else, targets are abs(stft(y))
                 else:
                     Y = [torchaudio.functional.complex_norm(unmix.stft(target).permute(3, 0, 1, 2, 4)) for target in y]
@@ -174,6 +180,8 @@ def train(args, unmix, device, train_sampler, optimizer):
                     loss = SISDR(Y, Y_hats)
                 if args.loss == 'SNRPSA':
                     loss = SNRPSA(Y, Y_hats)
+                    print('LOSS')
+                    print(loss)
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                         if args.loss in ['LogL1freq', 'LogL2freq']:
