@@ -68,7 +68,6 @@ def SNRPSA(s,s_hat):
         s: list of targets of any shape, with len(x) = #sources
         s_hat: list of corresponding estimates
     """
-    #s_hat = [x ** 2 for x in s_hat]
     EPS = torch.finfo(s[0].dtype).eps
     den = [x_hat - x for x, x_hat in zip(s, s_hat)]
     prima = [-10 * torch.log10((x ** 2).sum()/(xa ** 2).sum() + EPS) for x, xa in zip(s, den)]
@@ -253,6 +252,7 @@ def valid(args, unmix, device, valid_sampler):
                         phase = torchaudio.functional.angle(X)  # phase of X
                         Yphase = [torchaudio.functional.angle(target) for target in cY]  # phase of Y
                         if args.loss == 'SNRPSA':
+                            # When using SNRPSA, we additionally power-law compress the targets
                             Y = [(tarmag ** 0.5) * torch.cos(phase - tarphase) for tarmag, tarphase in
                                  zip(Ymag, Yphase)]
                         else:
@@ -278,7 +278,7 @@ def valid(args, unmix, device, valid_sampler):
 
 def get_statistics(args, dataloader):
     # If using a different dataset than MUSDB18HQ, uncomment this and import sklearn.preprocessing
-
+    '''
     # What follows computes the dataset statistics with sklearn
     scaler = sklearn.preprocessing.StandardScaler()
 
@@ -305,9 +305,9 @@ def get_statistics(args, dataloader):
 
     return scaler.mean_, std
 
-
+    '''
     # Otherwise, we directly load the MUSDB18-HQ statistics from file
-    #return np.load('scalermean.npy'), np.load('std.npy')
+    return np.load('scalermean.npy'), np.load('std.npy')
 
 def main():
     parser = argparse.ArgumentParser(description='Open Unmix Trainer')
@@ -441,6 +441,7 @@ def main():
     max_bin = utils.bandwidth_to_max_bin(
         train_dataset.sample_rate, args.nfft, args.bandwidth
     )
+    # SNRPSA: de-compress the scaler in order to avoid an exploding gradient from the  uncompressed initial statistics
     if args.loss == 'SNRPSA':
         power = 2
     else:
