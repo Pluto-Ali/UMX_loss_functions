@@ -77,6 +77,8 @@ def SNRPSA(s,s_hat):
 def create_criteria(loss, targets):   # Instantiates the pytorch losses
     if loss in ['L2time', 'L2mask', 'L2freq', 'LogL2time', 'LogL2freq', 'PSA']:
         criteria = [torch.nn.MSELoss() for t in targets]
+    elif loss == 'Dissimilarity':
+        criteria = torch.nn.MSELoss()
     elif loss in ['L1time', 'L1mask', 'L1freq', 'LogL1time', 'LogL1freq']:
         criteria = [torch.nn.L1Loss() for t in targets]
     elif loss == 'BinaryCrossEntropy':
@@ -177,6 +179,11 @@ def train(args, unmix, device, train_sampler, optimizer):
                     loss = SISDR(Y, Y_hats)
                 if args.loss == 'SNRPSA':
                     loss = SNRPSA(Y, Y_hats)
+                if args.loss == 'Dissimilarity':
+                    for s in range(len(Y_hats)):
+                        loss += criteria(Y_hats[s], Y[s])
+                        for t in range(len(Y)):   # Dissimilarity term
+                            loss -= 0.1 * criteria(Y_hats[s], Y[t])
                 else:
                     for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                         if args.loss in ['LogL1freq', 'LogL2freq']:
@@ -266,6 +273,11 @@ def valid(args, unmix, device, valid_sampler):
                         loss = SISDR(Y, Y_hats)
                     if args.loss == 'SNRPSA':
                         loss = SNRPSA(Y, Y_hats)
+                    if args.loss == 'Dissimilarity':
+                        for s in range(len(Y_hats)):
+                            loss += criteria(Y_hats[s], Y[s])
+                            for t in range(len(Y)):  # Dissimilarity term
+                                loss -= 0.1 * criteria(Y_hats[s], Y[t])
                     else:
                         for Y_hat, target, criterion in zip(Y_hats, Y, criteria):
                             if args.loss in ['LogL1freq', 'LogL2freq']:
@@ -318,7 +330,7 @@ def main():
                             'L2mask', 'L1mask', 'SISDRtime', 'SISDRfreq',
                             'MinSNRsdsdr', 'CrossEntropy', 'BinaryCrossEntropy',
                             'LogL2time', 'LogL1time', 'LogL2freq', 'LogL1freq',
-                            'PSA', 'SNRPSA'
+                            'PSA', 'SNRPSA', 'Dissimilarity'
                         ],
                         help='kind of loss used during training')
 
